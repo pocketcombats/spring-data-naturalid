@@ -88,6 +88,14 @@
         <tag>HEAD</tag>
     </scm>
 
+    <distributionManagement>
+        <repository>
+            <id>github-pocketcombats</id>
+            <name>GitHub Apache Maven Packages</name>
+            <url>https://maven.pkg.github.com/pocketcombats/spring-data-naturalid</url>
+        </repository>
+    </distributionManagement>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
