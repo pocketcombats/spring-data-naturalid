@@ -26,7 +26,7 @@ Add the following dependency to your project:
     <dependency>
         <groupId>com.github.pocketcombats</groupId>
         <artifactId>spring-data-naturalid</artifactId>
-        <version>1.0</version>
+        <version>v1.0</version>
         <scope>runtime</scope>
     </dependency>
 ```
