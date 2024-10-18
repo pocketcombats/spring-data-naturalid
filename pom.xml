@@ -4,7 +4,7 @@
 
     <groupId>com.github.pocketcombats</groupId>
     <artifactId>spring-data-naturalid</artifactId>
-    <version>1.1-SNAPSHOT</version>
+    <version>1.1</version>
 
     <name>Spring Data JPA support for Hibernate NaturalId annotation</name>
 
@@ -83,7 +83,7 @@
         <connection>scm:git:git://github.com/pocketcombats/spring-data-naturalid.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/pocketcombats/spring-data-naturalid.git</developerConnection>
         <url>https://github.com/pocketcombats/spring-data-naturalid/tree/master/</url>
-        <tag>HEAD</tag>
+        <tag>v1.1</tag>
     </scm>
 
     <distributionManagement>
