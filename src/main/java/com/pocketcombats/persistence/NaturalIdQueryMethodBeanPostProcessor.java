@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.data.repository.core.RepositoryInformation;
@@ -22,7 +23,6 @@ import org.springframework.data.repository.core.support.RepositoryProxyPostProce
 import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
@@ -33,10 +33,8 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
 
     private final RepositoryFactoryCustomizer customizer;
 
-    public NaturalIdQueryMethodBeanPostProcessor(EntityManager em) {
-        Session session = em.unwrap(Session.class);
-        MappingMetamodel metamodel = (MappingMetamodel) session.getSessionFactory().getMetamodel();
-        this.customizer = new NaturalIdRepositoryFactoryCustomizer(session, metamodel);
+    public NaturalIdQueryMethodBeanPostProcessor(ObjectProvider<EntityManager> emProvider) {
+        this.customizer = new NaturalIdRepositoryFactoryCustomizer(emProvider);
     }
 
     @Override
@@ -50,12 +48,10 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
     private static final class NaturalIdRepositoryFactoryCustomizer
             implements RepositoryFactoryCustomizer, RepositoryProxyPostProcessor {
 
-        private final Session session;
-        private final MappingMetamodel metamodel;
+        private final ObjectProvider<EntityManager> emProvider;
 
-        NaturalIdRepositoryFactoryCustomizer(Session session, MappingMetamodel metamodel) {
-            this.session = session;
-            this.metamodel = metamodel;
+        NaturalIdRepositoryFactoryCustomizer(ObjectProvider<EntityManager> emProvider) {
+            this.emProvider = emProvider;
         }
 
         @Override
@@ -68,6 +64,10 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
             if (!repositoryInformation.hasQueryMethods()) {
                 return;
             }
+            EntityManager em = emProvider.getIfAvailable();
+            assert em != null;
+            Session session = em.unwrap(Session.class);
+            MappingMetamodel metamodel = (MappingMetamodel) session.getSessionFactory().getMetamodel();
             EntityPersister entityDescriptor = metamodel.findEntityDescriptor(repositoryInformation.getDomainType());
             if (!entityDescriptor.hasNaturalIdentifier()) {
                 return;
@@ -87,6 +87,12 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
                     .stream()
                     .anyMatch(method -> candidateMethodNames.contains(method.getName()));
             if (hasMatchingMethods) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug(
+                            "{} registered for natural id query methods processing",
+                            repositoryInformation.getRepositoryInterface().getSimpleName()
+                    );
+                }
                 factory.addAdvice(
                         new NaturalIdQueryMethodInterceptor(
                                 session,
@@ -99,10 +105,11 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
         }
 
         private static Set<String> getCandidateMethodNames(String attributeName) {
-            Set<String> candidateMethodNames = new HashSet<>();
-            candidateMethodNames.add("findBy" + StringUtils.capitalize(attributeName));
-            candidateMethodNames.add("getBy" + StringUtils.capitalize(attributeName));
-            return candidateMethodNames;
+            String capitalizedAttributeName = StringUtils.capitalize(attributeName);
+            return Set.of(
+                    "findBy" + capitalizedAttributeName,
+                    "getBy" + capitalizedAttributeName
+            );
         }
     }
 
