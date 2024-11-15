@@ -4,6 +4,7 @@ import jakarta.persistence.EntityManager;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
 import org.hibernate.Session;
+import org.hibernate.SimpleNaturalIdLoadAccess;
 import org.hibernate.metamodel.MappingMetamodel;
 import org.hibernate.metamodel.mapping.NaturalIdMapping;
 import org.hibernate.metamodel.mapping.SingularAttributeMapping;
@@ -15,6 +16,7 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.data.jpa.repository.JpaContext;
 import org.springframework.data.repository.core.RepositoryInformation;
 import org.springframework.data.repository.core.support.RepositoryFactoryBeanSupport;
 import org.springframework.data.repository.core.support.RepositoryFactoryCustomizer;
@@ -33,8 +35,8 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
 
     private final RepositoryFactoryCustomizer customizer;
 
-    public NaturalIdQueryMethodBeanPostProcessor(ObjectProvider<EntityManager> emProvider) {
-        this.customizer = new NaturalIdRepositoryFactoryCustomizer(emProvider);
+    public NaturalIdQueryMethodBeanPostProcessor(ObjectProvider<JpaContext> jpaContextProvider) {
+        this.customizer = new NaturalIdRepositoryFactoryCustomizer(jpaContextProvider);
     }
 
     @Override
@@ -48,10 +50,10 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
     private static final class NaturalIdRepositoryFactoryCustomizer
             implements RepositoryFactoryCustomizer, RepositoryProxyPostProcessor {
 
-        private final ObjectProvider<EntityManager> emProvider;
+        private final ObjectProvider<JpaContext> jpaContextProvider;
 
-        NaturalIdRepositoryFactoryCustomizer(ObjectProvider<EntityManager> emProvider) {
-            this.emProvider = emProvider;
+        NaturalIdRepositoryFactoryCustomizer(ObjectProvider<JpaContext> jpaContextProvider) {
+            this.jpaContextProvider = jpaContextProvider;
         }
 
         @Override
@@ -64,8 +66,9 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
             if (!repositoryInformation.hasQueryMethods()) {
                 return;
             }
-            EntityManager em = emProvider.getIfAvailable();
-            assert em != null;
+            JpaContext jpaContext = jpaContextProvider.getIfAvailable();
+            assert jpaContext != null;
+            EntityManager em = jpaContext.getEntityManagerByManagedType(repositoryInformation.getDomainType());
             Session session = em.unwrap(Session.class);
             MappingMetamodel metamodel = (MappingMetamodel) session.getSessionFactory().getMetamodel();
             EntityPersister entityDescriptor = metamodel.findEntityDescriptor(repositoryInformation.getDomainType());
@@ -148,13 +151,12 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
                 LOG.trace("Loading {} with natural id {}", domainType.getSimpleName(), id);
             }
 
-            Object entity = session.bySimpleNaturalId(domainType)
-                    .setSynchronizationEnabled(synchronizationEnabled)
-                    .load(id);
+            SimpleNaturalIdLoadAccess<?> loader = session.bySimpleNaturalId(domainType)
+                    .setSynchronizationEnabled(synchronizationEnabled);
             if (Optional.class.isAssignableFrom(invocation.getMethod().getReturnType())) {
-                return Optional.ofNullable(entity);
+                return loader.loadOptional(id);
             } else {
-                return entity;
+                return loader.load(id);
             }
         }
     }
