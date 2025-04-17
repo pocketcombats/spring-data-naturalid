@@ -28,6 +28,18 @@ import org.springframework.util.StringUtils;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * A Spring {@link BeanPostProcessor} that enhances Spring Data JPA repositories with Hibernate Natural ID support.
+ * <p>
+ * This processor intercepts repository methods that query entities by their natural identifiers and
+ * redirects them to use Hibernate's {@code Session.bySimpleNaturalId()} method.
+ * <p>
+ * Currently only supports entities with a single natural ID attribute and methods named
+ * {@code findByX} or {@code getByX} where X is the natural ID attribute name.
+ *
+ * @see org.hibernate.annotations.NaturalId
+ * @see org.hibernate.annotations.NaturalIdCache
+ */
 @AutoConfiguration
 public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor {
 
@@ -66,8 +78,13 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
             if (!repositoryInformation.hasQueryMethods()) {
                 return;
             }
+
             JpaContext jpaContext = jpaContextProvider.getIfAvailable();
-            assert jpaContext != null;
+            if (jpaContext == null) {
+                LOG.error("JpaContext is not available. Natural ID query optimizations cannot be applied.");
+                return;
+            }
+
             EntityManager em = jpaContext.getEntityManagerByManagedType(repositoryInformation.getDomainType());
             Session session = em.unwrap(Session.class);
             MappingMetamodel metamodel = (MappingMetamodel) session.getSessionFactory().getMetamodel();
@@ -116,6 +133,9 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
         }
     }
 
+    /**
+     * Method interceptor that redirects natural ID query methods to use Hibernate's natural ID API.
+     */
     private static final class NaturalIdQueryMethodInterceptor implements MethodInterceptor {
 
         private final Session session;
