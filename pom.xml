@@ -4,7 +4,7 @@
 
     <groupId>com.pocketcombats</groupId>
     <artifactId>spring-data-naturalid</artifactId>
-    <version>1.4-SNAPSHOT</version>
+    <version>1.4</version>
 
     <name>Spring Data JPA NaturalId</name>
     <description>
@@ -157,7 +157,7 @@
         <connection>scm:git:git://github.com/pocketcombats/spring-data-naturalid.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/pocketcombats/spring-data-naturalid.git</developerConnection>
         <url>https://github.com/pocketcombats/spring-data-naturalid/tree/master/</url>
-        <tag>HEAD</tag>
+        <tag>v1.4</tag>
     </scm>
 
     <distributionManagement>
