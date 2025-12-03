@@ -40,10 +40,11 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring-boot.version>3.4.4</spring-boot.version>
-        <spring.version>6.2.6</spring.version>
-        <!-- Jakarta Persistence 3.2.0 requires Hibernate 7.0, which is currently in beta -->
-        <jpa.version>3.1.0</jpa.version>
+        <spring-boot.version>4.0.0</spring-boot.version>
+        <spring.version>7.0.1</spring.version>
+        <jpa.version>3.2.0</jpa.version>
+        <hibernate.version>7.1.10.Final</hibernate.version>
+        <jboss-logging.version>3.6.1.Final</jboss-logging.version>
     </properties>
 
     <profiles>
@@ -182,6 +183,12 @@
                 <artifactId>jakarta.persistence-api</artifactId>
                 <version>${jpa.version}</version>
             </dependency>
+
+            <dependency>
+                <groupId>org.jboss.logging</groupId>
+                <artifactId>jboss-logging</artifactId>
+                <version>${jboss-logging.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -192,20 +199,29 @@
             <version>${spring-boot.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.springframework.data</groupId>
-            <artifactId>spring-data-jpa</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-data-jpa</artifactId>
             <version>${spring-boot.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.hibernate.orm</groupId>
+                    <artifactId>hibernate-core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
-
 
         <dependency>
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-core</artifactId>
-            <version>6.5.2.Final</version>
+            <version>${hibernate.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>jakarta.activation</groupId>
                     <artifactId>jakarta.activation-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.antlr</groupId>
+                    <artifactId>antlr4-runtime</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -218,20 +234,20 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <artifactId>spring-boot-starter-data-jpa-test</artifactId>
             <version>${spring-boot.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.11.2</version>
+            <version>6.0.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <version>2.2.224</version>
+            <version>2.4.240</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -241,13 +257,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.14.0</version>
+                <version>3.14.1</version>
                 <configuration>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.springframework</groupId>
                             <artifactId>spring-context-indexer</artifactId>
-                            <version>6.1.14</version>
+                            <version>${spring.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
@@ -256,7 +272,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <id>enforce</id>
@@ -281,7 +297,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>versions-maven-plugin</artifactId>
-                <version>2.18.0</version>
+                <version>2.19.1</version>
                 <configuration>
                     <ruleSet>
                         <ignoreVersions>

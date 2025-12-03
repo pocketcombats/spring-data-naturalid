@@ -32,9 +32,9 @@ Add the following dependency to your project:
 
 ```xml
 <dependency>
-    <groupId>com.github.pocketcombats</groupId>
+    <groupId>com.pocketcombats</groupId>
     <artifactId>spring-data-naturalid</artifactId>
-    <version>1.3</version>
+    <version>1.4</version>
     <scope>runtime</scope>
 </dependency>
 ```
