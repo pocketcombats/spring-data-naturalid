@@ -1,9 +1,13 @@
 package com.pocketcombats.persistence;
 
-import org.springframework.beans.factory.ObjectProvider;
+import jakarta.persistence.EntityManager;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.data.jpa.repository.JpaContext;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactoryBean;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
 
@@ -28,23 +32,56 @@ import org.springframework.data.repository.core.support.RepositoryFactorySupport
 @AutoConfiguration
 public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor {
 
-    private final ObjectProvider<JpaContext> jpaContextProvider;
+    private static final Logger LOG = LoggerFactory.getLogger(NaturalIdQueryMethodBeanPostProcessor.class);
 
-    public NaturalIdQueryMethodBeanPostProcessor(ObjectProvider<JpaContext> jpaContextProvider) {
-        this.jpaContextProvider = jpaContextProvider;
+    private final ConfigurableListableBeanFactory beanFactory;
+
+    public NaturalIdQueryMethodBeanPostProcessor(ConfigurableListableBeanFactory beanFactory) {
+        this.beanFactory = beanFactory;
     }
 
     @Override
     public Object postProcessBeforeInitialization(Object bean, String beanName) {
         if (bean instanceof JpaRepositoryFactoryBean<?, ?, ?> repositoryFactoryBean) {
-            repositoryFactoryBean.addRepositoryFactoryCustomizer(this::customize);
+            repositoryFactoryBean.addRepositoryFactoryCustomizer(
+                    repositoryFactory -> customize(repositoryFactory, beanName)
+            );
         }
         return bean;
     }
 
-    private void customize(RepositoryFactorySupport repositoryFactory) {
-        var postProcessor = new NaturalIdRepositoryProxyPostProcessor(jpaContextProvider);
+    private void customize(RepositoryFactorySupport repositoryFactory, String factoryBeanName) {
+        EntityManager entityManager = entityManager(factoryBeanName);
+        if (entityManager == null) {
+            LOG.debug(
+                    "{} is left to Spring Data: its factory bean has no bean reference to an EntityManager",
+                    factoryBeanName
+            );
+            return;
+        }
+        var postProcessor = new NaturalIdRepositoryProxyPostProcessor(entityManager);
         repositoryFactory.addRepositoryProxyPostProcessor(postProcessor);
         repositoryFactory.addQueryCreationListener(postProcessor);
+    }
+
+    /**
+     * The repository's shared {@code EntityManager}, from the {@code entityManager} bean reference that Spring Data
+     * repository configuration gives the factory bean.
+     *
+     * @return {@code null} for a factory bean declared some other way.
+     */
+    private @Nullable EntityManager entityManager(String factoryBeanName) {
+        if (!beanFactory.containsBeanDefinition(factoryBeanName)) {
+            return null;
+        }
+        Object entityManager = beanFactory.getMergedBeanDefinition(factoryBeanName).getPropertyValues().get("entityManager");
+        if (!(entityManager instanceof RuntimeBeanReference reference)) {
+            return null;
+        }
+        // By type when no bean has the name
+        String name = reference.getBeanName();
+        return beanFactory.containsBean(name)
+                ? beanFactory.getBean(name, EntityManager.class)
+                : beanFactory.getBean(EntityManager.class);
     }
 }
