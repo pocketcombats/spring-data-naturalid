@@ -277,7 +277,7 @@ logging.level.com.pocketcombats.persistence=DEBUG
 Startup log:
 
 ```text
-DEBUG .p.NaturalIdRepositoryProxyPostProcessor : UserRepository.findByEmail(String) is executed as a natural id lookup
+DEBUG .p.NaturalIdRepositoryProxyPostProcessor : UserRepository.findByEmail(String) is registered for a natural id lookup
 DEBUG .p.NaturalIdRepositoryProxyPostProcessor : UserRepository.getByEmail(String) is left to Spring Data: its query is not derived from the method name
 ```
 

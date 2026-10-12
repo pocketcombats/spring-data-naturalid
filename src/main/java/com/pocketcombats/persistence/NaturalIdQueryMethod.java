@@ -73,7 +73,7 @@ record NaturalIdQueryMethod<T>(
                 continue;
             }
             if (method.getParameterCount() != 1 || !returnsEntity(repositoryInformation, method)) {
-                LOG.warn(
+                LOG.debug(
                         "{} is left to Spring Data: a natural id lookup takes one argument "
                                 + "and returns the entity or an Optional",
                         describe(repositoryInformation, method)

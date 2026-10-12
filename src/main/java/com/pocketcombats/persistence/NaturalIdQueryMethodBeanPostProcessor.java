@@ -53,7 +53,7 @@ public class NaturalIdQueryMethodBeanPostProcessor implements BeanPostProcessor 
     private void customize(RepositoryFactorySupport repositoryFactory, String factoryBeanName) {
         EntityManager entityManager = entityManager(factoryBeanName);
         if (entityManager == null) {
-            LOG.debug(
+            LOG.warn(
                     "{} is left to Spring Data: its factory bean has no bean reference to an EntityManager",
                     factoryBeanName
             );
