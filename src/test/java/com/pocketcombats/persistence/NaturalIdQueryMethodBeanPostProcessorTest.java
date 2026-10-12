@@ -1,61 +1,102 @@
 package com.pocketcombats.persistence;
 
-import org.hibernate.cfg.JdbcSettings;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;
-import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Sort;
 
-import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.function.Supplier;
 
-import static org.assertj.core.api.Assumptions.assumeThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static com.pocketcombats.persistence.TestApplication.statementInspector;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
-@DataJpaTest(properties = {
-        "spring.jpa.hibernate.ddl-auto=validate"
-})
+@DataJpaTest
 public class NaturalIdQueryMethodBeanPostProcessorTest {
-
-    private static final CountingStatementInspector countingStatementInspector = new CountingStatementInspector();
 
     @Autowired
     CompanyRepository repository;
 
+    @Autowired
+    DeclaredQueryCompanyRepository declaredQueryRepository;
+
+    @Autowired
+    HintedCompanyRepository hintedRepository;
+
+    @Autowired
+    DefaultMethodCompanyRepository defaultMethodRepository;
+
+    @Autowired
+    EmployeeRepository employeeRepository;
+
+    @Autowired
+    InheritedMethodCompanyRepository inheritedMethodRepository;
+
+    @Autowired
+    UnsupportedSignatureCompanyRepository unsupportedSignatureRepository;
+
     @BeforeEach
-    public void resetCounter() {
-        countingStatementInspector.reset();
+    public void setUp() {
+        statementInspector.reset();
     }
 
     @Test
-    public void testNaturalIdQueriesCount() {
-        Optional<Company> companyA = repository.findByTaxIdentifier("taxId");
-        Optional<Company> companyB = repository.findByTaxIdentifier("taxId");
-        assumeThat(companyA).isNotEmpty().isEqualTo(companyB);
-        assertEquals(1, countingStatementInspector.getCount(), "Expected exactly 1 query");
+    public void naturalIdLookupIsAnsweredFromTheSessionCache() {
+        assertStatementsForTwoCalls(() -> repository.findByTaxIdentifier("taxId"), 1);
     }
 
     @Test
-    public void testUniquePropertiesQueriesCount() {
-        Optional<Company> companyA = repository.findByUniqueProperty("uniqueValue");
-        Optional<Company> companyB = repository.findByUniqueProperty("uniqueValue");
-        assumeThat(companyA).isNotEmpty().isEqualTo(companyB);
-        assertEquals(
-                2, countingStatementInspector.getCount(),
-                "Expected findByUniqueProperty to perform query every time"
-        );
+    public void inheritedLookupIsAnsweredFromTheSessionCache() {
+        assertStatementsForTwoCalls(() -> inheritedMethodRepository.findByTaxIdentifier("taxId"), 1);
     }
 
-    @SpringBootApplication
-    @Import(NaturalIdQueryMethodBeanPostProcessor.class)
-    static class Configuration implements HibernatePropertiesCustomizer {
+    @Test
+    public void uniqueColumnLookupIsLeftToSpringData() {
+        assertStatementsForTwoCalls(() -> repository.findByUniqueProperty("uniqueValue"), 2);
+    }
 
-        @Override
-        public void customize(Map<String, Object> hibernateProperties) {
-            hibernateProperties.put(JdbcSettings.STATEMENT_INSPECTOR, countingStatementInspector);
-        }
+    @Test
+    public void declaredQueryIsLeftToSpringData() {
+        assertStatementsForTwoCalls(() -> declaredQueryRepository.findByTaxIdentifier("taxId"), 2);
+    }
+
+    @Test
+    public void namedQueryIsLeftToSpringData() {
+        assertStatementsForTwoCalls(() -> employeeRepository.findByBadge("badge1"), 2);
+    }
+
+    @Test
+    public void queryHintsAreLeftToSpringData() {
+        assertStatementsForTwoCalls(() -> hintedRepository.findByTaxIdentifier("taxId"), 2);
+    }
+
+    @Test
+    public void sortParameterIsLeftToSpringData() {
+        assertStatementsForTwoCalls(() -> unsupportedSignatureRepository.findByTaxIdentifier("taxId", Sort.unsorted()), 2);
+    }
+
+    @Test
+    public void defaultMethodIsLeftToSpringData() {
+        // Thrown by the default method's body; a natural id lookup would fail the nullability validation instead
+        assertThatExceptionOfType(NoSuchElementException.class)
+                .isThrownBy(() -> defaultMethodRepository.getByTaxIdentifier("missing"));
+    }
+
+    @Test
+    public void projectionIsLeftToSpringData() {
+        UnsupportedSignatureCompanyRepository.TaxIdentifierOnly projection =
+                assertStatementsForTwoCalls(() -> unsupportedSignatureRepository.findByTaxIdentifier("taxId"), 2);
+        assertThat(projection.getTaxIdentifier()).isEqualTo("taxId");
+    }
+
+    private static <T> T assertStatementsForTwoCalls(Supplier<Optional<T>> lookup, int expectedStatements) {
+        // Calls the lookup twice, which must find the seeded entity both times; returns result of the first call.
+        T found = lookup.get().orElseThrow();
+        lookup.get().orElseThrow();
+        assertThat(statementInspector.getStatements()).hasSize(expectedStatements);
+        return found;
     }
 }
