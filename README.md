@@ -68,8 +68,8 @@ public interface CompanyRepository extends Repository<Company, Integer> {
     // Method to find by natural ID - will be optimized!
     Optional<Company> findByTaxIdentifier(String taxIdentifier);
 
-    // Alternative semantic - also works
-    Company getByTaxIdentifier(String taxIdentifier);
+    // Alternative semantic also works; returns null when nothing matches
+    @Nullable Company getByTaxIdentifier(String taxIdentifier);
 }
 ```
 
@@ -100,7 +100,8 @@ public class Company {
 
 1. Currently only supports entities with a single natural ID attribute
 2. Only works with simple natural IDs (not composite natural IDs)
-3. Only intercepts methods named `findByX` or `getByX` where X is the natural ID attribute name
+3. Only intercepts query methods named `findByX` or `getByX`, where X is the Natural ID attribute name, that take
+   the natural ID and return the entity or an `Optional` of it
 
 ## How It Works
 
@@ -108,7 +109,20 @@ This library uses Spring's `BeanPostProcessor` to enhance repository beans. It:
 
 1. Detects repositories working with entities that have natural IDs
 2. Identifies methods that should use natural ID lookups (findByX, getByX)
-3. Intercepts these methods and redirects them to use Hibernate's natural ID API
+3. Intercepts these methods and routes them to Hibernate's Natural ID API on the session bound to the
+   current transaction (or open-in-view request); outside of one, on a throwaway session, as Spring Data would run
+   the query
+
+### Missing entities
+
+A lookup that finds nothing is answered as Spring Data would answer the query method:
+
+- `Optional<Company>` is empty;
+- anything else is `null`. In a `@NullMarked` package (or a Kotlin repository), Spring Data's own nullability
+  validation turns that `null` into an `EmptyResultDataAccessException` for a non-null return, exactly as it does
+  for every other query method.
+
+Default methods are left alone: a `default Company getByTaxIdentifier(...)` body runs as written.
 
 ## License
 
