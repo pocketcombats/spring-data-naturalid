@@ -2,11 +2,12 @@ package com.pocketcombats.persistence;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.FindOption;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
+import org.hibernate.KeyType;
 import org.hibernate.LockMode;
 import org.hibernate.Session;
-import org.hibernate.SimpleNaturalIdLoadAccess;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.persister.entity.EntityPersister;
 import org.jspecify.annotations.Nullable;
@@ -14,6 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.orm.jpa.EntityManagerFactoryUtils;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 final class NaturalIdQueryMethodInterceptor implements MethodInterceptor {
@@ -82,15 +85,17 @@ final class NaturalIdQueryMethodInterceptor implements MethodInterceptor {
     }
 
     private static <T> @Nullable T load(NaturalIdQueryMethod<T> queryMethod, Session session, Object id) {
-        SimpleNaturalIdLoadAccess<T> access = session.bySimpleNaturalId(queryMethod.entityType());
+        List<FindOption> options = new ArrayList<>(3);
+        options.add(KeyType.NATURAL);
         LockMode lockMode = queryMethod.lockMode();
         if (lockMode != null) {
-            access = access.with(lockMode);
+            options.add(lockMode);
         }
         NaturalIdQueryMethod.LoadGraph<T> loadGraph = queryMethod.loadGraph();
-        if (loadGraph != null) {
-            access = access.with(loadGraph.graph(), loadGraph.semantic());
+        if (loadGraph == null) {
+            return session.find(queryMethod.entityType(), id, options.toArray(FindOption[]::new));
         }
-        return access.load(id);
+        options.add(loadGraph.semantic());
+        return session.find(loadGraph.graph(), id, options.toArray(FindOption[]::new));
     }
 }

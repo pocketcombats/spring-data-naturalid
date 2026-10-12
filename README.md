@@ -14,8 +14,7 @@ optionally from the second-level cache, instead of the database.
 - **One requirement:** the field you look up has Hibernate's `@NaturalId` annotation.
 - **Nothing else changes.** Only `findByX` / `getByX` methods for the natural ID attribute are affected. All other
   repository methods stay normal Spring Data query methods.
-- **Spring Boot 4, Spring Data JPA 4, Hibernate 7.** Older releases support Spring Boot 3 and Hibernate 6
-  (see [Compatibility](#compatibility)).
+- **Spring Boot 4.1, Spring Data JPA 4, Hibernate 7.3 or newer.**
 
 ## The problem: the same query runs again and again
 
@@ -80,7 +79,7 @@ and load the entity through the natural ID API:
 
 ```java
 Session session = entityManager.unwrap(Session.class);
-User user = session.bySimpleNaturalId(User.class).load(email);
+User user = session.find(User.class, email, KeyType.NATURAL);
 ```
 
 This lookup is cache-aware. Hibernate keeps a map from natural ID to primary key in the persistence context. The first
@@ -103,7 +102,7 @@ Optional<User> findByEmail(String email);
 now runs as
 
 ```java
-session.bySimpleNaturalId(User.class).load(email);
+session.find(User.class, email, KeyType.NATURAL);
 ```
 
 on the Hibernate session of the current transaction, with the caching described above.
@@ -383,7 +382,7 @@ It does not help when:
 All options below stop `findByEmail` from querying on every call. The first two are what you would write by hand for
 each repository. This library does that for you.
 
-### Hand-written repository fragment calling `bySimpleNaturalId`
+### Hand-written repository fragment calling `bySimpleNaturalId` or `Session.find`
 
 ```java
 public interface UserByEmailLookup {
@@ -397,7 +396,7 @@ class UserByEmailLookupImpl implements UserByEmailLookup {
 
     @Override
     public Optional<User> findByEmail(String email) {
-        return em.unwrap(Session.class).bySimpleNaturalId(User.class).loadOptional(email);
+        return Optional.ofNullable(em.unwrap(Session.class).find(User.class, email, KeyType.NATURAL));
     }
 }
 
@@ -464,6 +463,9 @@ the entity you pass, and it does nothing across requests.
 
 Java 17 or newer is required.
 
+Hibernate 7.3 or newer is required, which Spring Boot 4.1 manages by default. The lookup uses `Session.find` with
+`KeyType.NATURAL`, which Hibernate added in 7.3.
+
 Kotlin repositories work. Declare the return type as `User?` or `Optional<User>` to get `null` or an empty `Optional`
 on a miss; a non-null `User` throws `EmptyResultDataAccessException` (see [Missing entities](#missing-entities)).
 
@@ -483,7 +485,7 @@ No reflection on your entities, no bytecode manipulation.
 3. It collects the query methods that match [Which methods are intercepted](#which-methods-are-intercepted), with
    their `@Lock` mode and `@EntityGraph`, read once at startup. When Spring Data creates the repository's queries, the
    library keeps only the collected methods whose query is derived from the method name.
-4. These methods, and only those, get an AOP interceptor. It calls `Session.bySimpleNaturalId(...).load(key)`,
+4. These methods, and only those, get an AOP interceptor. It calls `Session.find(..., key, KeyType.NATURAL)`,
    with the lock mode and the graph if declared, on the `EntityManager` bound to the current transaction (or to the Open
    Session in View request). When there is no such `EntityManager`, it uses a new short-lived one, as Spring Data does
    for the query.
@@ -524,7 +526,7 @@ this library, through Hibernate's natural ID cache.
 ### I added `@NaturalId`, but `findByEmail` still hits the database
 
 `@NaturalId` is a Hibernate annotation. Spring Data does not read it and still builds a JPQL query from the method
-name. Something has to call `Session.bySimpleNaturalId` instead: this library, or one of the
+name. Something has to call `Session.find` with `KeyType.NATURAL` instead: this library, or one of the
 [alternatives](#alternatives-compared).
 
 ### How do I keep one method as a normal Spring Data query?

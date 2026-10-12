@@ -15,8 +15,8 @@ import org.springframework.data.repository.core.support.RepositoryFactorySupport
  * A Spring {@link BeanPostProcessor} that enhances Spring Data JPA repositories with Hibernate Natural ID support.
  * <p>
  * Repository query methods that look an entity up by its natural identifier are routed to
- * {@link org.hibernate.Session#bySimpleNaturalId}, so repeated lookups are answered from the session cache
- * (or the L2 natural-id cache, if enabled) instead of running a query each time.
+ * {@link org.hibernate.Session#find} with {@link org.hibernate.KeyType#NATURAL}, so repeated lookups are answered
+ * from the session cache (or the L2 natural-id cache, if enabled) instead of running a query each time.
  * <p>
  * Supports entities with a single natural ID attribute and query methods named {@code findByX} or
  * {@code getByX}, where X is the natural ID attribute name, that take the natural id and return the entity

@@ -40,11 +40,12 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring-boot.version>4.0.0</spring-boot.version>
-        <spring.version>7.0.1</spring.version>
+        <spring-boot.version>4.1.1</spring-boot.version>
+        <spring.version>7.0.9</spring.version>
         <jpa.version>3.2.0</jpa.version>
-        <hibernate.version>7.1.10.Final</hibernate.version>
-        <jboss-logging.version>3.6.1.Final</jboss-logging.version>
+        <hibernate.version>7.4.13.Final</hibernate.version>
+        <jboss-logging.version>3.6.3.Final</jboss-logging.version>
+        <jspecify.version>1.0.1</jspecify.version>
     </properties>
 
     <profiles>
@@ -55,10 +56,11 @@
                     <plugin>
                         <groupId>org.owasp</groupId>
                         <artifactId>dependency-check-maven</artifactId>
-                        <version>12.1.1</version>
+                        <version>13.0.0</version>
                         <configuration>
                             <failBuildOnCVSS>8</failBuildOnCVSS>
                             <skipProvidedScope>true</skipProvidedScope>
+                            <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
                         </configuration>
                         <executions>
                             <execution>
@@ -185,6 +187,12 @@
             </dependency>
 
             <dependency>
+                <groupId>org.jspecify</groupId>
+                <artifactId>jspecify</artifactId>
+                <version>${jspecify.version}</version>
+            </dependency>
+
+            <dependency>
                 <groupId>org.jboss.logging</groupId>
                 <artifactId>jboss-logging</artifactId>
                 <version>${jboss-logging.version}</version>
@@ -218,6 +226,10 @@
                 <exclusion>
                     <groupId>jakarta.activation</groupId>
                     <artifactId>jakarta.activation-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>jakarta.xml.bind</groupId>
+                    <artifactId>jakarta.xml.bind-api</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>org.antlr</groupId>
