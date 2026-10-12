@@ -119,7 +119,7 @@ Maven:
 <dependency>
     <groupId>com.pocketcombats</groupId>
     <artifactId>spring-data-naturalid</artifactId>
-    <version>1.5</version>
+    <version>2.0</version>
     <scope>runtime</scope>
 </dependency>
 ```
@@ -127,7 +127,7 @@ Maven:
 Gradle:
 
 ```kotlin
-runtimeOnly("com.pocketcombats:spring-data-naturalid:1.5")
+runtimeOnly("com.pocketcombats:spring-data-naturalid:2.0")
 ```
 
 The library registers itself through Spring Boot autoconfiguration. There is nothing to enable and no API to call, so
