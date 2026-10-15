@@ -18,9 +18,9 @@ import org.springframework.data.repository.core.support.RepositoryFactorySupport
  * {@link org.hibernate.Session#find} with {@link org.hibernate.KeyType#NATURAL}, so repeated lookups are answered
  * from the session cache (or the L2 natural-id cache, if enabled) instead of running a query each time.
  * <p>
- * Supports entities with a single natural ID attribute and query methods named {@code findByX} or
- * {@code getByX}, where X is the natural ID attribute name, that take the natural id and return the entity
- * or an {@link java.util.Optional}.
+ * Supports query methods named {@code findBy} or {@code getBy} followed by the natural ID attributes joined by
+ * {@code And}, in any order, that take one argument per attribute and return the entity or an
+ * {@link java.util.Optional}.
  * A method with its own query or with query hints is left to Spring Data; a {@code @Lock} and an {@code @EntityGraph}
  * are passed on to the lookup.
  * A call with a {@code null} argument, or for an entity that an enabled Hibernate filter restricts, is left to

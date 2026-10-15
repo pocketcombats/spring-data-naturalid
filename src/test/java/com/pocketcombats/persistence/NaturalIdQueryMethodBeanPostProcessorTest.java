@@ -38,6 +38,9 @@ public class NaturalIdQueryMethodBeanPostProcessorTest {
     @Autowired
     UnsupportedSignatureCompanyRepository unsupportedSignatureRepository;
 
+    @Autowired
+    BranchRepository branchRepository;
+
     @BeforeEach
     public void setUp() {
         statementInspector.reset();
@@ -51,6 +54,18 @@ public class NaturalIdQueryMethodBeanPostProcessorTest {
     @Test
     public void inheritedLookupIsAnsweredFromTheSessionCache() {
         assertStatementsForTwoCalls(() -> inheritedMethodRepository.findByTaxIdentifier("taxId"), 1);
+    }
+
+    @Test
+    public void compositeNaturalIdLookupIsAnsweredFromTheSessionCache() {
+        Company company = repository.findByTaxIdentifier("taxId").orElseThrow();
+
+        statementInspector.reset();
+        assertStatementsForTwoCalls(() -> branchRepository.findByCompanyAndCode(company, "hq"), 1);
+
+        // The attributes in the other order: the same natural id, already in the session
+        statementInspector.reset();
+        assertStatementsForTwoCalls(() -> branchRepository.findByCodeAndCompany("hq", company), 0);
     }
 
     @Test

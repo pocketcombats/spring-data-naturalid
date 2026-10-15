@@ -14,9 +14,12 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.orm.jpa.EntityManagerFactoryUtils;
+import org.springframework.util.ObjectUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 final class NaturalIdQueryMethodInterceptor implements MethodInterceptor {
@@ -39,10 +42,15 @@ final class NaturalIdQueryMethodInterceptor implements MethodInterceptor {
 
     @Override
     public @Nullable Object invoke(MethodInvocation invocation) throws Throwable {
-        Object id = invocation.getArguments()[0];
-        if (id == null) {
+        Object[] arguments = invocation.getArguments();
+        if (ObjectUtils.containsElement(arguments, null)) {
             // Left to Spring Data's "is null" query
             return invocation.proceed();
+        }
+        // By attribute name, as Hibernate accepts a simple and a composite natural id alike
+        Map<String, Object> id = new LinkedHashMap<>();
+        for (int i = 0; i < arguments.length; i++) {
+            id.put(queryMethod.attributeNames().get(i), arguments[i]);
         }
 
         EntityManager shared = EntityManagerFactoryUtils.getTransactionalEntityManager(entityManagerFactory);

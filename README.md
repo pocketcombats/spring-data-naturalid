@@ -12,8 +12,8 @@ optionally from the second-level cache, instead of the database.
 
 - **One runtime dependency, no repository code changes.** `Optional<User> findByEmail(String email)` stays as it is.
 - **One requirement:** the field you look up has Hibernate's `@NaturalId` annotation.
-- **Nothing else changes.** Only `findByX` / `getByX` methods for the natural ID attribute are affected. All other
-  repository methods stay normal Spring Data query methods.
+- **Nothing else changes.** Only `findByX` / `getByX` methods for the natural ID are affected. All other repository 
+  methods stay normal Spring Data query methods.
 - **Spring Boot 4.1, Spring Data JPA 4, Hibernate 7.3 or newer.**
 
 ## The problem: the same query runs again and again
@@ -29,7 +29,7 @@ public interface UserRepository extends Repository<User, Long> {
 }
 ```
 
-One transaction, several services, and each service needs the current user:
+One transaction calls several services, and each service needs the current user:
 
 ```java
 @Transactional
@@ -50,9 +50,9 @@ select u1_0.id,u1_0.email,u1_0.name from users u1_0 where u1_0.email=?
 select u1_0.id,u1_0.email,u1_0.name from users u1_0 where u1_0.email=?
 ```
 
-Call `findById(userId)` four times in the same transaction and you get one query. Calls two to four are answered from
-the persistence context. `findByEmail` does not get this help, and the Hibernate second-level cache does not help it
-either.
+If you call `findById(userId)` four times in the same transaction, only one query runs. Calls two to four are answered
+from the persistence context. `findByEmail` does not get this help, and the Hibernate second-level cache does not help
+it either.
 
 ### Why `findById` is cached and `findByEmail` is not
 
@@ -88,7 +88,7 @@ returns the managed entity without SQL. With `@NaturalIdCache`, the map is also 
 frequently used keys are resolved without SQL across requests as well.
 
 Spring Data JPA does not use this API. It reads the method name `findByEmail` and builds a JPQL query from it.
-`@NaturalId` on the field does not change that. Until now the fix was a hand-written repository fragment, once per
+`@NaturalId` on the field does not change that. Until now, the fix was to write a repository fragment by hand, once per
 repository (see [Alternatives](#alternatives-compared)).
 
 ## What this library does
@@ -119,7 +119,7 @@ Maven:
 <dependency>
     <groupId>com.pocketcombats</groupId>
     <artifactId>spring-data-naturalid</artifactId>
-    <version>2.0</version>
+    <version>2.1</version>
     <scope>runtime</scope>
 </dependency>
 ```
@@ -127,7 +127,7 @@ Maven:
 Gradle:
 
 ```kotlin
-runtimeOnly("com.pocketcombats:spring-data-naturalid:2.0")
+runtimeOnly("com.pocketcombats:spring-data-naturalid:2.1")
 ```
 
 The library registers itself through Spring Boot autoconfiguration. There is nothing to enable and no API to call, so
@@ -161,9 +161,10 @@ public class User {
 }
 ```
 
-Any unique business key works: an email address, a SKU, an ISBN, a tax identifier, a country code, an id from an
-external system. A `@NaturalId` is immutable by default. If the value can change, declare `@NaturalId(mutable = true)`;
-Hibernate then checks the session for changed keys before each lookup.
+Several fields with `@NaturalId` form one composite natural ID, for example `company` and `code` of a `Branch`.
+
+A `@NaturalId` is immutable by default. If the value can change, declare `@NaturalId(mutable = true)`; Hibernate then
+checks the session for changed keys before each lookup.
 
 ### 2. Keep the repository as it is
 
@@ -182,40 +183,47 @@ public interface UserRepository extends Repository<User, Long> {
 
 ### 3. Nothing else to do
 
-No annotations on the repository, no configuration properties. At startup the library looks at every Spring Data JPA
-repository that `@EnableJpaRepositories` or Spring Boot defines. For each repository whose entity has a single
-`@NaturalId` attribute, it intercepts the matching methods.
+No annotations on the repository, no configuration properties.
 
 ### Which methods are intercepted
 
-A method is intercepted when its name is exactly `findBy<Attribute>` or `getBy<Attribute>` for the natural ID, it
-takes one argument, it returns the entity or an `Optional` of it, and Spring Data derives its query from the method
-name. The library listens for the queries Spring Data creates and replaces only derived ones.
+A natural ID is one attribute, such as `email`, or several attributes that identify the entity together, such as
+`company` and `code`. A method is intercepted when all of the following are true:
 
-A method with its own query is left to Spring Data: `@Query`, `@NativeQuery`, `@Procedure`, or a named query called
-`User.findByEmail` (declared with `@NamedQuery` or in `META-INF/jpa-named-queries.properties`). So is a method with
-query hints (`@QueryHints`, `@Meta`). Examples for an entity `User` with the natural ID `email`:
+- Its name is `findBy` or `getBy` followed by the natural ID attributes, joined by `And`. With one attribute, that is
+  `findByEmail` or `getByEmail`. With two, the name lists both, in either order: `findByCompanyAndCode` or
+  `findByCodeAndCompany`. The name contains nothing else. A name that lists only some of the attributes, such as
+  `findByCode`, is a normal Spring Data method.
+- It takes one argument per attribute, in the order the name lists them. For an association such as `company`, the
+  argument is the entity, as in the derived query.
+- It returns the entity or an `Optional` of it.
+- Spring Data derives its query from the method name. A method with its own query is left to Spring Data: `@Query`,
+  `@NativeQuery`, `@Procedure`, or a named query called `User.findByEmail` (declared with `@NamedQuery` or in
+  `META-INF/jpa-named-queries.properties`). A method with query hints (`@QueryHints`, `@Meta`) is also left to
+  Spring Data.
 
-| Method on `UserRepository`                                             | Intercepted | Why                                                      |
+Examples for `User` with the natural ID `email`, and `Branch` with the natural ID `company` and `code`:
+
+| Method                                                                 | Intercepted | Why                                                      |
 |------------------------------------------------------------------------|-------------|----------------------------------------------------------|
 | `Optional<User> findByEmail(String email)`                             | yes         | derived query, one argument, returns the entity          |
-| `User findByEmail(String email)`                                       | yes         | the entity itself, without `Optional`, is fine           |
+| `User findByEmail(String email)`                                       | yes         | the entity without `Optional` is accepted too            |
 | `@Nullable User getByEmail(String email)`                              | yes         | `getBy` is accepted too; `@Nullable` makes no difference |
 | `@Lock(PESSIMISTIC_WRITE) Optional<User> findByEmail(String email)`    | yes         | the lock mode is passed on, see below                    |
 | `@EntityGraph(attributePaths = "roles") User getByEmail(String email)` | yes         | the graph is passed on, see below                        |
+| `Optional<Branch> findByCompanyAndCode(Company company, String code)`  | yes         | every attribute of the natural ID, one argument each     |
+| `Branch getByCodeAndCompany(String code, Company company)`             | yes         | either attribute order; the arguments follow the name    |
 | `Optional<User> findByEmailIgnoreCase(String email)`                   | no          | the name must be exactly `findByEmail` / `getByEmail`    |
+| `Optional<Branch> findByCode(String code)`                             | no          | names only one of the two attributes                     |
 | `List<User> findByEmail(String email)`                                 | no          | returns a collection                                     |
 | `UserSummary findByEmail(String email)`                                | no          | returns a projection                                     |
-| `Optional<User> findByEmail(String email, Sort sort)`                  | no          | takes more than one argument                             |
+| `Optional<User> findByEmail(String email, Sort sort)`                  | no          | takes an extra argument                                  |
 | `default User getByEmail(String email) { ... }`                        | no          | default methods run as written                           |
 | `@Query("...") Optional<User> findByEmail(String email)`               | no          | declares its own query                                   |
-| `@QueryHints(...) Optional<User> findByEmail(String email)`            | no          | hints need a query                                       |
+| `@QueryHints(...) Optional<User> findByEmail(String email)`            | no          | query hints need a query                                 |
 
-Methods that are not intercepted stay normal Spring Data methods. A `findByEmail` or `getByEmail` query method whose
-signature does not match is reported with a warning at startup. Any other method that is left to Spring Data is named
-in the DEBUG log with the reason. A default method is not logged: for Spring Data it is not a query method.
-
-A `null` key is not looked up. The call goes to Spring Data's query, which searches for `email is null`.
+A `null` argument is not looked up. If any argument is `null`, the call goes to Spring Data's query, which searches
+for `is null`.
 
 ### Missing entities
 
@@ -245,9 +253,9 @@ no SQL. With Spring Data alone, every `@Lock` call runs the full query again.
 Spring Data's fallback name (`User.getByEmail` for an `@EntityGraph` without a name) all work, with fetch or load
 semantics as declared. When the entity is loaded from the database, the graph is applied in that one statement, as a
 join. When the entity is already in the session, or comes from the second-level cache, Hibernate returns it as it is
-and does not load the graph's attributes. This is the same behavior as `EntityManager.find` with a graph, and so the
-same as Spring Data's `findById` with `@EntityGraph`. If code in the same transaction may load the entity without the
-graph first, initialize the association where you need it, for example with `Hibernate.initialize`.
+and does not load the graph's attributes. This is the same behavior as `EntityManager.find` with a graph, and therefore
+the same as Spring Data's `findById` with `@EntityGraph`. If other code in the same transaction may load the entity
+first, without the graph, initialize the association where you need it, for example with `Hibernate.initialize`.
 
 ### Hibernate filters and `@TenantId`
 
@@ -259,9 +267,9 @@ kinds of filters. The library therefore follows two rules:
   Data's query, and the filter applies as usual. Filters on other entities do not matter. Once the filter is disabled,
   the lookup is used again.
 - An entity with a filter that is always enabled goes through Spring Data's query in every session. This is the case
-  for `@FilterDef(autoEnabled = true)` and for the filter Hibernate creates for `@TenantId`. The one exception is a
-  session of the root tenant, which sees all tenants: Hibernate disables the tenant filter there, so the lookup is
-  used.
+  for `@FilterDef(autoEnabled = true)` and for the filter Hibernate creates for `@TenantId`. The only exception is a
+  session of the root tenant, which sees all tenants. Hibernate disables the tenant filter in that session, so the
+  lookup is used.
 
 ### Verify it is working
 
@@ -283,12 +291,12 @@ DEBUG .p.NaturalIdRepositoryProxyPostProcessor : UserRepository.getByEmail(Strin
 
 Interception is decided once, at startup. A single call can still go to Spring Data's query (see
 [Which methods are intercepted](#which-methods-are-intercepted) and
-[Hibernate filters and `@TenantId`](#hibernate-filters-and-tenantid)). At TRACE level every call says which way it
-went:
+[Hibernate filters and `@TenantId`](#hibernate-filters-and-tenantid)). At TRACE level, the log says for every call
+which way it went:
 
 ```text
-TRACE c.p.p.NaturalIdQueryMethodInterceptor    : Loading com.example.User with natural id foo@example.com
-TRACE c.p.p.NaturalIdQueryMethodInterceptor    : com.example.User with natural id foo@example.com is left to Spring Data: an enabled filter restricts the entity
+TRACE c.p.p.NaturalIdQueryMethodInterceptor    : Loading com.example.User with natural id {email=foo@example.com}
+TRACE c.p.p.NaturalIdQueryMethodInterceptor    : com.example.User with natural id {email=foo@example.com} is left to Spring Data: an enabled filter restricts the entity
 ```
 
 Hibernate statistics count natural ID lookups separately from queries:
@@ -303,8 +311,7 @@ statistics.getNaturalIdQueryExecutionCount();  // lookups that went to the datab
 statistics.getNaturalIdCacheHitCount();        // lookups answered by the L2 natural ID cache
 ```
 
-In a test, assert on the statement count with Hibernate's `StatementInspector`, datasource-proxy's `QueryCountHolder`
-or Hypersistence's `SQLStatementCountValidator`. Two `findByEmail` calls in one transaction must produce one statement.
+In a test, assert on the statement count: two `findByEmail` calls in one transaction must produce one statement.
 
 In a `@DataJpaTest` the library is off unless you import it: a test slice loads only its own list of
 autoconfigurations, and this library is not on that list. A `@SpringBootTest` loads the library like the application
@@ -352,9 +359,8 @@ spring.jpa.properties.hibernate.cache.region.factory_class=jcache
 spring.jpa.properties.hibernate.javax.cache.provider=com.github.benmanes.caffeine.jcache.spi.CaffeineCachingProvider
 ```
 
-Ehcache, Infinispan, Hazelcast and Redisson work the same way. The normal second-level cache rules apply: writes made
-outside Hibernate (native SQL, other applications, database triggers) are not seen by the cache, and a deployment with
-several nodes needs a clustered provider, or must accept that data can be out of date for a short time.
+Ehcache, Infinispan, Hazelcast and Redisson work the same way. The usual second-level cache rules apply: the cache does
+not see writes made outside Hibernate.
 
 ## When it helps, and when it does not
 
@@ -379,10 +385,9 @@ It does not help when:
 
 ## Alternatives compared
 
-All options below stop `findByEmail` from querying on every call. The first two are what you would write by hand for
-each repository. This library does that for you.
+All options below stop `findByEmail` from querying on every call.
 
-### Hand-written repository fragment calling `bySimpleNaturalId` or `Session.find`
+**A hand-written repository fragment** is what this library does for you, once per repository:
 
 ```java
 public interface UserByEmailLookup {
@@ -404,51 +409,27 @@ public interface UserRepository extends Repository<User, Long>, UserByEmailLooku
 }
 ```
 
-The runtime behavior is the same as with this library, and callers do not change. The cost is two extra types per
-repository, and the next derived `findBySku` in another repository still runs a query on every call.
+Callers do not change. The cost is two extra types per repository, and the next derived `findBySku` in another
+repository still runs a query on every call. A custom repository base class avoids the extra types:
+`@EnableJpaRepositories(repositoryBaseClass = ...)` with one generic `findByNaturalId(Object key)`. But every
+caller must switch from `findByEmail(email)` to `findByNaturalId(email)`, and the argument is no longer typed.
 
-### Custom repository base class with `findByNaturalId`
+**The Hibernate query cache** stores the primary keys of a query result, keyed by the query string and its
+parameters. Enable it with `hibernate.cache.use_query_cache=true` and put
+`@QueryHints(@QueryHint(name = HibernateHints.HINT_CACHEABLE, value = "true"))` on the method. The entity itself
+still needs `@Cache`. Any insert, update or delete on the `users` table clears every cached query on that table.
+Updating a `last_login_at` column on each login is enough to keep the cache empty. It suits reference tables that
+rarely change. Unlike a natural ID lookup, it caches empty results.
 
-With `@EnableJpaRepositories(repositoryBaseClass = ...)` one generic `findByNaturalId(Object key)` covers every
-entity. Callers must change from `findByEmail(email)` to `findByNaturalId(email)`, and lose the readable method name
-and the compile-time type of the argument.
+**Spring Cache `@Cacheable` on the method** caches entity instances outside Hibernate. Across requests you get
+detached objects: lazy associations throw `LazyInitializationException`, changes are not tracked, and the instance
+is not the one the current session manages. Nothing removes the entry when the user is updated. If you want an
+application-level cache, cache the mapping from email to id (or a DTO), then call `findById`. That method does use
+the persistence context and the second-level cache.
 
-### Hibernate query cache on the derived query
-
-```properties
-spring.jpa.properties.hibernate.cache.use_query_cache=true
-```
-
-```java
-@QueryHints(@QueryHint(name = org.hibernate.jpa.HibernateHints.HINT_CACHEABLE, value = "true"))
-Optional<User> findByEmail(String email);
-```
-
-The query cache stores the primary keys of the result, per query string and parameters. The entity itself comes from
-the second-level cache, so it still needs `@Cache`. Any insert, update or delete on the `users` table invalidates every
-cached query on that table; updating a `last_login_at` column on each login is enough to keep the cache empty. It fits
-reference tables that rarely change. Unlike a natural ID lookup, it does cache empty results.
-
-### Spring Cache `@Cacheable` on the repository or service method
-
-```java
-@Cacheable("usersByEmail")
-Optional<User> findByEmail(String email);
-```
-
-This caches entity instances outside Hibernate. Across requests you get detached objects: lazy associations throw
-`LazyInitializationException`, changes are not tracked, and the cached instance is not the one the current session
-manages. Nothing removes the entry when the user is updated, unless you add `@CacheEvict` to every method that writes
-the entity. If you want an application-level cache, cache the mapping from email to id (or a DTO), then call
-`findById`, which does use the persistence context and the second-level cache.
-
-### Load once, then pass the entity (or its id) down
-
-Load the user once at the start of the request and pass it, or only its primary key, to every service. This needs no
-extra setup, but method signatures change across the code base (or you add a `@RequestScope` holder), it covers only
-the entity you pass, and it does nothing across requests.
-
-### Summary
+**Load once, then pass the entity down.** Load the user at the start of the request and pass it, or only its
+primary key, to every service. This needs no setup. But method signatures change across the code base, or you add a
+`@RequestScope` holder. It covers only the entity you pass, and it does nothing across requests.
 
 | Approach                                | Same key, same transaction              | Frequently used rows across requests | Stays correct after writes             | What you change                                  |
 |-----------------------------------------|-----------------------------------------|--------------------------------------|----------------------------------------|--------------------------------------------------|
@@ -470,7 +451,7 @@ Kotlin repositories work. Declare the return type as `User?` or `Optional<User>`
 on a miss; a non-null `User` throws `EmptyResultDataAccessException` (see [Missing entities](#missing-entities)).
 
 Several persistence units are supported. Each repository uses the `EntityManager` that Spring Data configured it with
-(`@EnableJpaRepositories(entityManagerFactoryRef = ...)`), so its lookups go to its own persistence unit, also when
+(`@EnableJpaRepositories(entityManagerFactoryRef = ...)`), so its lookups go to its own persistence unit, even when
 two units map the same entity.
 
 ## How it works
@@ -481,37 +462,28 @@ No reflection on your entities, no bytecode manipulation.
    repository factory of every Spring Data JPA repository that `@EnableJpaRepositories` or Spring Boot defines.
    Repositories of other Spring Data modules are not touched.
 2. For each repository, the post-processor asks Hibernate's mapping metamodel, in the repository's own persistence
-   unit, whether the domain type has a natural ID. Entities without one, or with a composite one, are skipped.
+   unit, whether the domain type has a natural ID. Entities without one are skipped.
 3. It collects the query methods that match [Which methods are intercepted](#which-methods-are-intercepted), with
-   their `@Lock` mode and `@EntityGraph`, read once at startup. When Spring Data creates the repository's queries, the
-   library keeps only the collected methods whose query is derived from the method name.
+   their `@Lock` mode and `@EntityGraph`, and keeps the ones whose query Spring Data derives from the method name.
 4. These methods, and only those, get an AOP interceptor. It calls `Session.find(..., key, KeyType.NATURAL)`,
    with the lock mode and the graph if declared, on the `EntityManager` bound to the current transaction (or to the Open
    Session in View request). When there is no such `EntityManager`, it uses a new short-lived one, as Spring Data does
    for the query.
-5. Before each lookup the interceptor checks that the lookup would answer as the query would. A `null` key, or an
-   enabled Hibernate filter on the entity, sends the call on to Spring Data's query.
+5. Before each lookup, the interceptor checks that the lookup would give the same answer as the query. A `null`
+   argument, or an enabled Hibernate filter on the entity, sends the call on to Spring Data's query.
 
-A repository the library cannot handle keeps its normal Spring Data behavior. A composite natural ID is logged as a
-warning. A repository whose persistence unit the library cannot find, or whose persistence unit is not Hibernate's, is
-named in the DEBUG log.
+A repository the library cannot handle keeps its normal Spring Data behavior. A repository whose persistence unit the
+library cannot find, or whose persistence unit is not Hibernate's, is named in the DEBUG log.
 
 ## Limitations
 
-1. Entities with exactly one `@NaturalId` attribute. Composite natural IDs are not supported; a warning is logged at
-   startup.
-2. Only methods that match [Which methods are intercepted](#which-methods-are-intercepted) are affected, and a call
-   for an entity that an enabled Hibernate filter restricts (`@TenantId` entities included) still goes to Spring Data's
-   query.
-3. An `@EntityGraph` is applied only when the entity is loaded from the database
-   (see [Locks and entity graphs](#locks-and-entity-graphs-on-intercepted-methods)).
-4. A natural ID lookup answers like `findById`: with the entity the session already holds, without asking the
-   database again. A row that was deleted, or whose natural ID was changed, by a bulk `@Modifying` query or native SQL
-   is still found until the session is cleared. Use `clearAutomatically = true` on such queries.
-5. Repositories you build yourself are not intercepted: a `JpaRepositoryFactoryBean` declared as a `@Bean`, or
+1. A natural ID lookup answers like `findById`: with the entity the session already holds, without asking the
+   database again. If a bulk `@Modifying` query or native SQL deletes a row, or changes its natural ID, the session
+   still finds the old entity until it is cleared. Use `clearAutomatically = true` on such queries.
+2. Repositories you build yourself are not intercepted: a `JpaRepositoryFactoryBean` declared as a `@Bean`, or
    `new JpaRepositoryFactory(entityManager).getRepository(...)`. The library reads a repository's persistence unit
    from the bean definition that `@EnableJpaRepositories` creates, and these repositories have none.
-6. In an AOT-processed application (`spring.aot.enabled=true`, or a native image), Spring Data generates the code of
+3. In an AOT-processed application (`spring.aot.enabled=true`, or a native image), Spring Data generates the code of
    `findByEmail` at build time, and a generated method is not intercepted. Run AOT processing with
    `spring.aot.repositories.enabled=false` to keep the interception.
 

@@ -15,6 +15,15 @@ CREATE TABLE employee
     PRIMARY KEY (id)
 );
 
+CREATE TABLE branch
+(
+    id         INTEGER NOT NULL,
+    company_id INTEGER NOT NULL REFERENCES company (id),
+    code       VARCHAR NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE (company_id, code)
+);
+
 CREATE TABLE account
 (
     id     INTEGER NOT NULL,

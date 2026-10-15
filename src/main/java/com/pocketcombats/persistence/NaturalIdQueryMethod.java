@@ -4,6 +4,8 @@ import jakarta.persistence.EntityManager;
 import org.hibernate.LockMode;
 import org.hibernate.graph.GraphSemantic;
 import org.hibernate.graph.RootGraph;
+import org.hibernate.metamodel.mapping.NaturalIdMapping;
+import org.hibernate.metamodel.mapping.SingularAttributeMapping;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,17 +22,14 @@ import org.springframework.data.repository.core.RepositoryInformation;
 import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 record NaturalIdQueryMethod<T>(
         Method method,
         Class<T> entityType,
+        List<String> attributeNames,
         @Nullable LockMode lockMode,
         @Nullable LoadGraph<T> loadGraph
 ) {
@@ -42,26 +41,30 @@ record NaturalIdQueryMethod<T>(
     }
 
     /**
-     * The query methods named {@code findByX} or {@code getByX} after the Natural ID attribute
-     * that take the Natural ID and return the entity or an {@link Optional} of it.
+     * The query methods named {@code findByX} or {@code getByX} after the natural id attributes,
+     * joined by {@code And} in any order, that take one argument per attribute and return the
+     * entity or an {@link Optional} of it.
      */
     static Set<NaturalIdQueryMethod<?>> resolve(
             EntityManager entityManager,
             RepositoryInformation repositoryInformation,
-            String attributeName
+            NaturalIdMapping naturalIdMapping
     ) {
-        String capitalizedAttributeName = StringUtils.capitalize(attributeName);
-        Set<String> candidateNames = Set.of(
-                "findBy" + capitalizedAttributeName,
-                "getBy" + capitalizedAttributeName
-        );
+        List<String> attributeNames = naturalIdMapping.getNaturalIdAttributes().stream()
+                .map(SingularAttributeMapping::getAttributeName)
+                .toList();
+        Map<String, List<String>> parameterAttributesByName = parameterAttributesByName(attributeNames);
         Set<NaturalIdQueryMethod<?>> methods = new HashSet<>();
         for (Method method : repositoryInformation.getQueryMethods()) {
-            if (!candidateNames.contains(method.getName())) {
+            List<String> parameterAttributes = parameterAttributesByName.get(method.getName());
+            if (parameterAttributes == null) {
                 continue;
             }
             if (AnnotatedElementUtils.hasAnnotation(method, Query.class)) {
-                // Not derived, so never intercepted
+                LOG.debug(
+                        "{} is left to Spring Data: it declares its own query",
+                        describe(repositoryInformation, method)
+                );
                 continue;
             }
             if (AnnotatedElementUtils.hasAnnotation(method, QueryHints.class)
@@ -72,17 +75,48 @@ record NaturalIdQueryMethod<T>(
                 );
                 continue;
             }
-            if (method.getParameterCount() != 1 || !returnsEntity(repositoryInformation, method)) {
+            if (method.getParameterCount() != parameterAttributes.size()
+                    || !returnsEntity(repositoryInformation, method)) {
                 LOG.debug(
-                        "{} is left to Spring Data: a natural id lookup takes one argument "
+                        "{} is left to Spring Data: a natural id lookup takes one argument per natural id attribute "
                                 + "and returns the entity or an Optional",
                         describe(repositoryInformation, method)
                 );
                 continue;
             }
-            methods.add(of(entityManager, repositoryInformation.getDomainType(), method));
+            methods.add(of(entityManager, repositoryInformation.getDomainType(), method, parameterAttributes));
         }
         return methods;
+    }
+
+    /**
+     * The natural id attribute each parameter supplies, by the accepted method names:
+     * {@code findByXAndY}, {@code getByXAndY}, {@code findByYAndX}, {@code getByYAndX}.
+     */
+    private static Map<String, List<String>> parameterAttributesByName(List<String> attributeNames) {
+        Map<String, List<String>> parameterAttributesByName = new HashMap<>();
+        for (List<String> permutation : permutations(attributeNames)) {
+            String capitalizedAttributeNames = permutation.stream()
+                    .map(StringUtils::capitalize)
+                    .collect(Collectors.joining("And"));
+            parameterAttributesByName.put("findBy" + capitalizedAttributeNames, permutation);
+            parameterAttributesByName.put("getBy" + capitalizedAttributeNames, permutation);
+        }
+        return parameterAttributesByName;
+    }
+
+    private static List<List<String>> permutations(List<String> attributeNames) {
+        if (attributeNames.isEmpty()) {
+            return List.of(List.of());
+        }
+        List<List<String>> permutations = new ArrayList<>();
+        for (String first : attributeNames) {
+            List<String> others = attributeNames.stream().filter(name -> !name.equals(first)).toList();
+            for (List<String> permutation : permutations(others)) {
+                permutations.add(Stream.concat(Stream.of(first), permutation.stream()).toList());
+            }
+        }
+        return permutations;
     }
 
     static String describe(RepositoryInformation repositoryInformation, Method method) {
@@ -102,10 +136,16 @@ record NaturalIdQueryMethod<T>(
         return returnType.isAssignableFrom(repositoryInformation.getDomainType());
     }
 
-    private static <T> NaturalIdQueryMethod<T> of(EntityManager entityManager, Class<T> entityType, Method method) {
+    private static <T> NaturalIdQueryMethod<T> of(
+            EntityManager entityManager,
+            Class<T> entityType,
+            Method method,
+            List<String> attributeNames
+    ) {
         return new NaturalIdQueryMethod<>(
                 method,
                 entityType,
+                attributeNames,
                 lockMode(method),
                 loadGraph(entityManager, entityType, method)
         );

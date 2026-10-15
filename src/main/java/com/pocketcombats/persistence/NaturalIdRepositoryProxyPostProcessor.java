@@ -4,9 +4,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceException;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.metamodel.mapping.SingularAttributeMapping;
+import org.hibernate.metamodel.mapping.NaturalIdMapping;
 import org.hibernate.persister.entity.EntityPersister;
-import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.Advisor;
@@ -21,7 +20,6 @@ import org.springframework.data.repository.core.support.RepositoryProxyPostProce
 
 import java.lang.reflect.Method;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -65,12 +63,15 @@ final class NaturalIdRepositoryProxyPostProcessor
             return;
         }
         EntityPersister entityDescriptor = sessionFactory.getMappingMetamodel().findEntityDescriptor(domainType);
-        String attributeName = entityDescriptor == null ? null : simpleNaturalIdAttribute(entityDescriptor);
-        if (attributeName == null) {
+        if (entityDescriptor == null) {
+            return;
+        }
+        NaturalIdMapping naturalIdMapping = entityDescriptor.getNaturalIdMapping();
+        if (naturalIdMapping == null) {
             return;
         }
 
-        for (NaturalIdQueryMethod<?> queryMethod : NaturalIdQueryMethod.resolve(entityManager, repositoryInformation, attributeName)) {
+        for (NaturalIdQueryMethod<?> queryMethod : NaturalIdQueryMethod.resolve(entityManager, repositoryInformation, naturalIdMapping)) {
             Method method = queryMethod.method();
             Advisor advisor = new DefaultPointcutAdvisor(
                     new StaticMethodMatcherPointcut() {
@@ -104,22 +105,5 @@ final class NaturalIdRepositoryProxyPostProcessor
         } else {
             LOG.debug("{} is left to Spring Data: its query is not derived from the method name", candidate.name());
         }
-    }
-
-    /**
-     * The name of the entity's single natural id attribute.
-     *
-     * @return {@code null} when it has none or a composite one.
-     */
-    private static @Nullable String simpleNaturalIdAttribute(EntityPersister entityDescriptor) {
-        if (!entityDescriptor.hasNaturalIdentifier()) {
-            return null;
-        }
-        List<SingularAttributeMapping> attributes = entityDescriptor.getNaturalIdMapping().getNaturalIdAttributes();
-        if (attributes.size() != 1) {
-            LOG.warn("{} declares a composite natural id, which is not supported", entityDescriptor.getEntityName());
-            return null;
-        }
-        return attributes.get(0).getAttributeName();
     }
 }
